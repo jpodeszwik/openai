@@ -31,13 +31,20 @@ class GeneticNetworkHelper:
 class GeneticSearcher:
     def __init__(self, pop_size):
         self.pop = [Network.random_network() for i in range(pop_size)]
+        self.fitness_cache = {}
         self.nt = NetTester()
 
     def rate_network(self, net):
         return self.nt.test_n_times_and_return_min(net, 10)
 
+    def fitness(self, net):
+        if net not in self.fitness_cache:
+            self.fitness_cache[net] = self.rate_network(net)
+
+        return self.fitness_cache[net]
+
     def selection(self):
-        population_fitness = [(net, self.rate_network(net)) for net in self.pop]
+        population_fitness = [(net, self.fitness(net)) for net in self.pop]
         population_fitness = sorted(population_fitness, reverse=True, key=lambda x: x[1])
         pop_size = len(population_fitness)
         old_survivors = list(map(lambda x: x[0], population_fitness[:int(pop_size/3)]))
@@ -48,22 +55,30 @@ class GeneticSearcher:
         
         new_generation = old_survivors + children
 
-        while len(new_generation) < pop_size:
+        while len(new_generation) < 0.9 * pop_size:
             new_generation.append(GeneticNetworkHelper.mutate(random.choice(old_survivors)))
+
+        while len(new_generation) < pop_size:
+            new_generation.append(Network.random_network())
 
         self.pop = new_generation
 
+        self.best = population_fitness[0][0]
         return population_fitness[0][1]
 
     def show_best(self):
-        population_fitness = [(net, self.rate_network(net)) for net in self.pop]
-        population_fitness = sorted(population_fitness, reverse=True, key=lambda x: x[1])
-        best = population_fitness[0][0]
-        self.nt.render(best)
+        self.nt.render(self.best)
 
 class Network:
     def __init__(self, weights):
         self.weights = weights
+    
+    def __hash__(self):
+        return hash(frozenset(self.weights))
+
+    def __eq__(self, other):
+        return self.weights.__eq__(other.weights)
+
 
     def weighted_sum(self, observation):
         sum = 0.0
@@ -73,7 +88,7 @@ class Network:
         return sum + self.weights[3]
 
     def output(self, observation):
-        val = self.weighted_sum(observation) / 4
+        val = self.weighted_sum(observation) / 2
 #        print('observation: {}, val: {}'.format(observation, val))
         if val > 2:
             return 2
@@ -107,6 +122,9 @@ class NetTester:
 
         for t in range(1000):
             observation, reward, done, info = self.env.step(action)
+
+            for i in range(3):
+                observation[i] /= self.env.observation_space.high[i]
             numpy.ndarray(shape=(1,1), dtype=float)
             action = numpy.array([net.output(observation)])
 
