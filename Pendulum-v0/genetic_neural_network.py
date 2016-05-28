@@ -7,24 +7,24 @@ from gym.spaces import Box
 
 class GeneticNetworkHelper:
     def crossing(net1, net2):
-        crossing_point = random.randint(1, 2)
+        crossing_point = random.randint(1, 3)
         new_weights = []
         
         for i in range(crossing_point):
             new_weights.append(net1.weights[i])
 
-        for i in range(crossing_point, 3):
+        for i in range(crossing_point, 4):
             new_weights.append(net2.weights[i])
 
         return Network(new_weights)
 
     def mutate(net):
-        mutations = random.randint(1, 2)
-        mutated_genes = random.sample([0, 1, 2], mutations)
+        mutations = random.randint(1, 3)
+        mutated_genes = random.sample([0, 1, 2, 3], mutations)
         new_weights = copy.copy(net.weights)
         
         for idx in mutated_genes:
-            new_weights[idx] = random.random()*10 - 5
+            new_weights[idx] = random.random()*2 - 1
 
         return Network(new_weights)
 
@@ -65,15 +65,15 @@ class Network:
     def __init__(self, weights):
         self.weights = weights
 
-   def weighted_sum(self, observation):
+    def weighted_sum(self, observation):
         sum = 0.0
         for i in range(3):
             sum += self.weights[i] * observation[i]
 
-        return sum
+        return sum + self.weights[3]
 
     def output(self, observation):
-        val = self.weighted_sum(observation) / 2
+        val = self.weighted_sum(observation) / 4
 #        print('observation: {}, val: {}'.format(observation, val))
         if val > 2:
             return 2
@@ -87,7 +87,7 @@ class Network:
         return str(self.weights)
 
     def random_network():
-        return Network([random.random() * 10 - 5 for i in range(3)])
+        return Network([random.random() * 2 - 1 for i in range(4)])
 
 class NetTester:
     def __init__(self):
