@@ -1,76 +1,51 @@
+from concurrent.futures import ProcessPoolExecutor
+
 import copy
 import gym
 import numpy
 import random
 
 
-class GeneticNetworkHelper:
-    @staticmethod
-    def crossing(net1, net2):
-        crossing_point = random.randint(1, 3)
-        new_weights = []
-
-        for i in range(crossing_point):
-            new_weights.append(net1.weights[i])
-
-        for i in range(crossing_point, 4):
-            new_weights.append(net2.weights[i])
-
-        return Network(new_weights)
-
-    @staticmethod
-    def mutate(net):
-        mutations = random.randint(1, 3)
-        mutated_genes = random.sample([0, 1, 2, 3], mutations)
-        new_weights = copy.copy(net.weights)
-
-        for idx in mutated_genes:
-            new_weights[idx] = random.random() * 2 - 1
-
-        return Network(new_weights)
-
-
 class GeneticSearcher:
-    def __init__(self, pop_size):
+    def __init__(self, pop_size, problem):
+        self.problem = problem
         self.pop = [Network.random_network() for i in range(pop_size)]
         self.fitness_cache = {}
-        self.nt = NetTester()
         self.best = None
+        self.nt = NetTester(problem)
+        self.pp = ProcessPoolExecutor(max_workers=4)
+        self.ntf = NetworkTesterFactory(problem)
 
-    def rate_network(self, net):
-        return self.nt.test_n_times_and_return_min(net, 10)
-
-    def fitness(self, net):
-        if net not in self.fitness_cache:
-            self.fitness_cache[net] = self.rate_network(net)
-
-        return self.fitness_cache[net]
+    def recalculate_fitness(self):
+        nets_to_rate = [net for net in self.pop if net not in self.fitness_cache]
+        for net, res in self.pp.map(self.ntf.rate_network, nets_to_rate):
+            self.fitness_cache[net] = res
 
     def selection(self):
-        population_fitness = [(net, self.fitness(net)) for net in self.pop]
+        self.recalculate_fitness()
+        population_fitness = [(net, self.fitness_cache[net]) for net in self.pop]
         population_fitness = sorted(population_fitness, reverse=True, key=lambda x: x[1])
         pop_size = len(population_fitness)
         old_survivors = list(map(lambda x: x[0], population_fitness[:int(pop_size / 3)]))
         children = []
         while len(children) < pop_size / 3:
             parents = random.sample(set(old_survivors), 2)
-            children.append(GeneticNetworkHelper.crossing(parents[0], parents[1]))
+            children.append(self.problem.crossing(parents[0], parents[1]))
 
         new_generation = old_survivors + children
 
         while len(new_generation) < 0.9 * pop_size:
-            new_generation.append(GeneticNetworkHelper.mutate(random.choice(old_survivors)))
+            new_generation.append(self.problem.mutate(random.choice(old_survivors)))
 
         while len(new_generation) < pop_size:
             new_generation.append(Network.random_network())
 
         self.pop = new_generation
-
         self.best = population_fitness[0][0]
         return population_fitness[0][1]
 
     def show_best(self):
-        self.nt.render('{}'.format(self.best))
+        self.nt.test(self.best, render=True)
 
 
 class Network:
@@ -108,58 +83,80 @@ class Network:
 
 
 class NetTester:
-    def __init__(self):
-        self.env = gym.make('Pendulum-v0')
+    def __init__(self, problem):
+        self.problem = problem
+        self.env = problem.make_env()
 
     def test_n_times_and_return_min(self, net, n):
-        results = [self.test(net) for i in range(n)]
+        results = [self.test(net) for _ in range(n)]
         return min(results)
 
-    def test(self, net):
+    def test(self, net, render=False):
         observation = self.env.reset()
-        numpy.ndarray(shape=(1, 1), dtype=float)
-        action = numpy.array([0])
-
         res = 0.0
 
         for t in range(1000):
-            observation, reward, done, info = self.env.step(action)
+            if render:
+                self.env.render()
 
-            for i in range(3):
-                observation[i] /= self.env.observation_space.high[i]
-            numpy.ndarray(shape=(1, 1), dtype=float)
+            self.problem.scale_observation(self.env, observation)
             action = numpy.array([net.output(observation)])
+            observation, reward, done, info = self.env.step(action)
 
             res += reward
 
             if done:
                 break
 
-        return reward
+        return res
 
-    def test_with_render(self, net):
-        observation = self.env.reset()
-        numpy.ndarray(shape=(1, 1), dtype=float)
-        action = numpy.array([0])
 
-        for t in range(1000):
-            self.env.render()
-            observation, reward, done, info = self.env.step(action)
-            numpy.ndarray(shape=(1, 1), dtype=float)
-            action = numpy.array([net.output(observation)])
+class NetworkTesterFactory:
+    def __init__(self, problem):
+        self.problem = problem
 
-            if done:
-                break
+    def rate_network(self, net):
+        nt = NetTester(self.problem)
+        return net, nt.test_n_times_and_return_min(net, 10)
 
-        return t + 1
 
-    def render(self, net):
-        val = self.test_with_render(net)
-        print('result: {}', val)
+class PendulumV0:
+    @staticmethod
+    def crossing(net1, net2):
+        crossing_point = random.randint(1, 3)
+        new_weights = []
+
+        for i in range(crossing_point):
+            new_weights.append(net1.weights[i])
+
+        for i in range(crossing_point, 4):
+            new_weights.append(net2.weights[i])
+
+        return Network(new_weights)
+
+    @staticmethod
+    def mutate(net):
+        mutations = random.randint(1, 3)
+        mutated_genes = random.sample([0, 1, 2, 3], mutations)
+        new_weights = copy.copy(net.weights)
+
+        for idx in mutated_genes:
+            new_weights[idx] = random.random() * 2 - 1
+
+        return Network(new_weights)
+
+    @staticmethod
+    def make_env():
+        return gym.make('Pendulum-v0')
+
+    @staticmethod
+    def scale_observation(env, observation):
+        for i in range(3):
+            observation[i] /= env.observation_space.high[i]
 
 
 def main():
-    gs = GeneticSearcher(100)
+    gs = GeneticSearcher(100, PendulumV0)
 
     for i in range(20):
         print('generation {}'.format(i))
@@ -168,8 +165,6 @@ def main():
 
         gs.show_best()
 
-        if best == 10000:
-            break
 
-
-main()
+if __name__ == '__main__':
+    main()
