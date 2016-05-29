@@ -15,6 +15,7 @@ class GeneticSearcher:
         self.nt = NetTester(problem)
         self.pp = ProcessPoolExecutor(max_workers=4)
         self.ntf = NetworkTesterFactory(problem)
+        self.pop_size = pop_size
 
     def recalculate_fitness(self):
         nets_to_rate = [net for net in self.pop if net not in self.fitness_cache]
@@ -22,30 +23,43 @@ class GeneticSearcher:
             self.fitness_cache[net] = res
 
     def selection(self):
-        self.recalculate_fitness()
         population_fitness = [(net, self.fitness_cache[net]) for net in self.pop]
         population_fitness = sorted(population_fitness, reverse=True, key=lambda x: x[1])
-        pop_size = len(population_fitness)
-        old_survivors = list(map(lambda x: x[0], population_fitness[:int(pop_size / 3)]))
+        self.best = population_fitness[0]
+        return list(map(lambda x: x[0], population_fitness[:int(self.pop_size / 3)]))
+
+    def crossing(self, parents):
         children = []
-        while len(children) < pop_size / 3:
-            parents = random.sample(set(old_survivors), 2)
+        while len(children) < self.pop_size / 3:
+            parents = random.sample(set(parents), 2)
             children.append(self.problem.crossing(parents[0], parents[1]))
 
-        new_generation = old_survivors + children
+        return children
 
-        while len(new_generation) < 0.9 * pop_size:
-            new_generation.append(self.problem.mutate(random.choice(old_survivors)))
+    def mutation(self, population):
+        mutants = []
+        while len(mutants) < 0.3 * self.pop_size:
+            mutants.append(self.problem.mutate(random.choice(population)))
 
-        while len(new_generation) < pop_size:
+        return mutants
+
+    def iteration(self):
+        self.recalculate_fitness()
+        old_survivors = self.selection()
+        children = self.crossing(old_survivors)
+        mutants = self.mutation(old_survivors)
+
+        new_generation = old_survivors + children + mutants
+
+        while len(new_generation) < self.pop_size:
             new_generation.append(Network.random_network())
 
         self.pop = new_generation
-        self.best = population_fitness[0][0]
-        return population_fitness[0][1]
+
+        return self.best[1]
 
     def show_best(self):
-        self.nt.test(self.best, render=True)
+        self.nt.test(self.best[0], render=True)
 
 
 class Network:
@@ -160,7 +174,7 @@ def main():
 
     for i in range(20):
         print('generation {}'.format(i))
-        best = gs.selection()
+        best = gs.iteration()
         print('best: {}'.format(best))
 
         gs.show_best()
